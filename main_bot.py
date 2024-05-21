@@ -18,7 +18,7 @@ from telegram.ext import (
 )
 
 
-TELEGRAM_API_TOKEN = "6881625558:AAHWCWB22HtYbIw40gghT4UxZT-HIuZedV0"
+TELEGRAM_API_TOKEN = ""
 
 token = {"access_token": ""}
 headers = {"Content-Type": "application/json"}
@@ -49,7 +49,8 @@ register_client = 1
     to_description,
     to_website,
     to_address,
-) = range(2, 21)
+    to_linkedin_org,
+) = range(2, 22)
 client_profile = {}
 org_profile = {}
 
@@ -107,16 +108,18 @@ async def register_org(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # name of the organization
 async def org_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    org_profile["telegramId"] = context._user_id
-    org_profile["telegramUsername"] = context._user_id
+    org_profile["telegramId"] = str(context._user_id)
+    org_profile["telegramUsername"] = str(context._user_id) + "@telegram"
     org_profile["name"] = update.message.text
-    await context.bot.send_message(chat_id=context._user_id, text="type")
+    await context.bot.send_message(
+        chat_id=context._user_id, text="type like PRIVATE OR GOVERNMENTAL"
+    )
     return to_type
 
 
 # type of the organization
 async def org_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    org_profile["type"] = update.message.text
+    org_profile["type"] = str(update.message.text)
     await context.bot.send_message(
         chat_id=context._user_id, text="please send your email"
     )
@@ -135,6 +138,7 @@ async def org_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # register phone number
 async def org_phone_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
     org_profile["phoneNumber"] = update.message.text
+    org_profile["houseNumber"] = update.message.text
     await context.bot.send_message(
         chat_id=context._user_id, text="tell us about your organization"
     )
@@ -144,6 +148,12 @@ async def org_phone_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # about the organization
 async def org_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     org_profile["description"] = update.message.text
+    await context.bot.send_message(chat_id=context._user_id, text="send your linkdin")
+    return to_linkedin_org
+
+
+async def org_linkedin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    org_profile["linkedin"] = update.message.text
     await context.bot.send_message(chat_id=context._user_id, text="send your website")
     return to_website
 
@@ -160,9 +170,7 @@ async def org_website(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # register address
 async def org_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    org_profile["city"], org_profile["subCity"], org_profile["kebele"] = [
-        k.strip() for k in update.message.text.split(",")
-    ]
+    org_profile["city"], *org = [k.strip() for k in update.message.text.split(",")]
     await context.bot.send_message(
         chat_id=context._user_id, text="do you agree tell me"
     )
@@ -214,7 +222,8 @@ async def email(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def phone_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
     client_profile["phoneNumber"] = update.message.text
     await context.bot.send_message(
-        chat_id=context._user_id, text="what is your highest education level"
+        chat_id=context._user_id,
+        text="what is your highest education level eg:  'HIGHSCHOOL', 'BSC', 'MSC', 'PHD'",
     )
     return to_highest_education_level
 
@@ -277,21 +286,34 @@ async def save(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
 
     if query.data == "save":
-        profile = {"telegramId": str(context._user_id)}
-        for i in ["highestEducationLevel", "portfolio", "cv", "github", "linkedin"]:
-            if i in client_profile:
-                profile[i] = client_profile[i]
-                del client_profile[i]
-        request = Request_to_Django(
-            endpoint="http://localhost:5000/api/v1/employee/register"
-        )
-        res = request.post_request(client_profile)
-        request = Request_to_Django(
-            endpoint="http://localhost:5000/api/v1/profile/create"
-        )
-        res_pro = request.post_request(profile)
-        await context.bot.send_message(chat_id=context._user_id, text=res.data)
+        if client_profile != {}:
+            profile = {"telegramId": str(context._user_id)}
+            for i in ["highestEducationLevel", "portfolio", "cv", "github", "linkedin"]:
+                if i in client_profile:
+                    profile[i] = client_profile[i]
+                    del client_profile[i]
+            request = Request_to_Django(
+                endpoint="http://localhost:5000/api/v1/employee/register"
+            )
+            res = request.post_request(client_profile)
+            request = Request_to_Django(
+                endpoint="http://localhost:5000/api/v1/profile/create"
+            )
+            res_pro = request.post_request(profile)
+            await context.bot.send_message(chat_id=context._user_id, text="test")
 
+        if org_profile != {}:  # register organization
+            request = Request_to_Django(
+                endpoint="http://localhost:5000/api/v1/org/register"
+            )
+            res_org = request.post_request(org_profile)
+            print(org_profile, res_org.text)
+            if res_org.status_code == 200:
+                await context.bot.send_message(chat_id=context._user_id, text="Done")
+            else:
+                await context.bot.send_message(
+                    chat_id=context._user_id, text="some thing went wrong"
+                )
         return ConversationHandler.END
     else:
         await context.bot.send_message(chat_id=context._user_id, text="Bye")
@@ -354,6 +376,7 @@ conversation_one = ConversationHandler(
         to_phone_number_org: [MessageHandler(~filters.COMMAND, org_phone_number)],
         to_website: [MessageHandler(~filters.COMMAND, org_website)],
         to_address: [MessageHandler(~filters.COMMAND, org_address)],
+        to_linkedin_org: [MessageHandler(~filters.COMMAND, org_linkedin)],
     },
     fallbacks=[CommandHandler("cancel", start)],
 )
